@@ -1,0 +1,17 @@
+[package]
+name = "rustminify"
+version = "0.0.0"
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "Minifies Rust code."
+repository = "https://github.com/qryxip/rustminify"
+keywords = ["minification", "minifier"]
+categories = ["compression"]
+
+[dependencies]
+proc-macro2 = { version = "1.0.28", features = ["span-locations"] }
+quote = "1.0.9"
+syn = { version = "1.0.74", features = ["full"] }
+
+[dev-dependencies]
+test-case = "1.2.0"
