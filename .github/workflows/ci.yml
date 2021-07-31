@@ -1,0 +1,402 @@
+name: CI
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  push:
+    branches:
+      - master
+    tags:
+      - 'rustminify-cli-v[0-9]+.[0-9]+.[0-9]+**'
+  pull_request:
+
+env:
+  RESOLVE_VERSIONS_PY: |
+    from argparse import ArgumentParser
+    import json
+    import urllib.request
+    import re
+
+    CRATE_SPEC = re.compile(r'\A([a-zA-Z0-9_-]+)@\^([0-9]+)\.([0-9]+)\Z')
+
+
+    def main() -> None:
+        parser = ArgumentParser()
+        parser.add_argument('specs', metavar='PSEUDO_SPECS', type=CrateSpec, nargs='+')
+        print('\n'.join(map(resolve, parser.parse_args().specs)))
+
+
+    class CrateSpec:
+        def __init__(self, s: str):
+            if not (m := CRATE_SPEC.match(s)):
+                raise RuntimeError(f'the version must be `{CRATE_SPEC.pattern}`')
+            self.package_name = m.group(1)
+            self.version_req_major = int(m.group(2))
+            self.version_req_minor = int(m.group(3))
+
+
+    def resolve(spec: CrateSpec) -> str:
+        with urllib.request.urlopen(f'https://crates.io/api/v1/crates/{spec.package_name}') as res:
+            versions = json.load(res)['versions']
+        matched = set()
+        for version in versions:
+            major, minor, patch_pre_build = version['num'].split('.')
+            major, minor = (int(major), int(minor))
+            if ((major, spec.version_req_major) == (0, 0) and minor == spec.version_req_minor or major == spec.version_req_major and minor >= spec.version_req_minor) and patch_pre_build.isdecimal():
+                matched.add((minor, int(patch_pre_build)))
+        if not matched:
+            raise RuntimeError(f'No such package: `{spec.package_name} ^{spec.version_req_major}.{spec.version_req_minor}`')
+        minor, patch = max(matched)
+        return f'::set-output name={spec.package_name}::{spec.version_req_major}.{minor}.{patch}'
+
+
+    if __name__ == '__main__':
+        main()
+
+jobs:
+  rustfmt:
+    name: Rustfmt
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up `stable`
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+          profile: minimal
+          components: rustfmt
+
+      - name: cargo-fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  grcov:
+    name: grcov
+    runs-on: ubuntu-20.04
+    env:
+      NIGHTLY_TOOLCHAIN: nightly-2021-07-30
+    if: ${{ github.repository_owner == 'qryxip' && github.ref == 'refs/heads/master' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up `stable`
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Set up `${{ env.NIGHTLY_TOOLCHAIN }}`
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+          profile: minimal
+          components: llvm-tools-preview
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Resolve `grcov ^0.8`
+        id: resolve-versions
+        run: python -c "$RESOLVE_VERSIONS_PY" grcov@^0.8
+
+      - name: Cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/grcov
+          key: grcov-${{ steps.resolve-versions.outputs.grcov }}
+
+      - name: Install grcov v${{ steps.resolve-versions.outputs.grcov }}
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: grcov --version '=${{ steps.resolve-versions.outputs.grcov }}'
+          toolchain: stable
+
+      - name: cargo-run
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: -p rustminify-cli -- -h
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+        env:
+          RUSTFLAGS: '-Zinstrument-coverage'
+
+      - name: cargo-test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-fail-fast -v -- --test-threads 1
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+        env:
+          RUSTFLAGS: '-Zinstrument-coverage'
+          RUST_BACKTRACE: full
+          LLVM_PROFILE_FILE: '%p-%m.profraw'
+
+      - name: grcov
+        run: rustup run "$NIGHTLY_TOOLCHAIN" grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+
+      - name: Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: lcov.info
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target-triple:
+          - x86_64-pc-windows-msvc
+          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
+        include:
+          - { channel: stable, target-triple: x86_64-pc-windows-msvc  , exe-suffix: .exe, os: windows-2019 }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-unknown-linux-gnu, exe-suffix: ''  , os: ubuntu-20.04 }
+
+    name: ${{ matrix.channel }}-${{ matrix.target-triple }}
+    runs-on: ${{ matrix.os }}
+
+    env:
+      NIGHTLY_TOOLCHAIN: nightly-2021-07-30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Workaround for https://github.com/actions/cache/issues/403
+      - name: Use GNU tar
+        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >>"$GITHUB_ENV"
+        if: ${{ matrix.os == 'macos-10.15' }}
+
+      - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
+        id: install-toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.channel }}
+          target: ${{ matrix.target-triple }}
+          default: true
+          profile: minimal
+          components: clippy
+
+      - name: Set up `${{ env.NIGHTLY_TOOLCHAIN }}`
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+          target: ${{ matrix.target-triple }}
+          profile: minimal
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Resolve `cargo-udeps ^0.1`
+        id: resolve-versions
+        run: python -c "$RESOLVE_VERSIONS_PY" cargo-udeps@^0.1
+        shell: bash
+
+      - name: Cache for cargo-udeps
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/cargo-udeps${{ matrix.exe-suffix }}
+          key: build-crates-${{ matrix.os }}-${{ steps.resolve-versions.outputs.cargo-udeps }}
+
+      - name: Cache for build cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            ./target
+          key: build-build-${{ matrix.channel }}-${{ matrix.target-triple }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ hashFiles('./Cargo.*') }}
+
+      - name: Install cargo-udeps v${{ steps.resolve-versions.outputs.cargo-udeps }}
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-udeps --version '=${{ steps.resolve-versions.outputs.cargo-udeps }}'
+          toolchain: stable
+
+      - name: cargo-clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --target ${{ matrix.target-triple }} -- -D warnings
+
+      - name: cargo-test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-fail-fast --target ${{ matrix.target-triple }}
+        env:
+          RUST_BACKTRACE: full
+
+      - name: cargo-install (locked)
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./rustminify-cli --debug --target ${{ matrix.target-triple }} --locked
+
+      - name: cargo-install
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./rustminify-cli --debug --target ${{ matrix.target-triple }}
+
+      - name: cargo-udeps
+        uses: actions-rs/cargo@v1
+        with:
+          command: udeps
+          args: --all-targets
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+
+  upload-archives:
+    strategy:
+      fail-fast: false
+      matrix:
+        target-triple:
+          - x86_64-pc-windows-msvc
+          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
+        include:
+          - { target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
+          - { target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
+
+    name: Upload (${{ matrix.target-triple }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ startsWith(github.ref, 'refs/tags/rustminify-cli-') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: 'Set up `stable` (target: `${{ matrix.target-triple }}`)'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target-triple }}
+          default: true
+          profile: minimal
+
+      - name: cargo-install
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path ./rustminify-cli --target ${{ matrix.target-triple }} -v --locked
+
+      - name: Create an asset
+        id: asset
+        run: |
+          BIN_TARGET=rustminify
+          if ${{ contains(matrix.target-triple, 'pc-windows') }}; then
+            DOT_EXE=.exe
+          fi
+          ASSET_STEM="$BIN_TARGET-${GITHUB_REF#refs/tags/rustminify-cli-}-${{ matrix.target-triple }}"
+          git archive -o "./$ASSET_STEM.tar" --prefix "$ASSET_STEM/" HEAD
+          tar -xf "./$ASSET_STEM.tar"
+          mv "$HOME/.cargo/bin/$BIN_TARGET$DOT_EXE" "./$ASSET_STEM/"
+          if ${{ contains(matrix.target-triple, 'pc-windows') }}; then
+            ASSET="$ASSET_STEM.zip"
+            7z a "$ASSET" "./$ASSET_STEM"
+            zipinfo "./$ASSET"
+          else
+            ASSET="$ASSET_STEM.tar.gz"
+            tar -czvf "./$ASSET" "./$ASSET_STEM"
+          fi
+          echo "::set-output name=asset::$ASSET"
+        shell: bash
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: assets
+          path: ${{ steps.asset.outputs.asset }}
+
+  upload-release-notes:
+    name: Upload the release notes
+    runs-on: ubuntu-20.04
+    if: ${{ startsWith(github.ref, 'refs/tags/rustminify-cli-') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Prepare release notes
+        run: |
+          with open('./CHANGELOG.md') as file:
+              changelog = file.read()
+          output = ''
+          inside_subsection = False
+          for line in changelog.splitlines():
+              is_h2 = line.startswith('## ')
+              if not inside_subsection and is_h2:
+                  inside_subsection = True
+              elif inside_subsection and not is_h2:
+                  output += line + '\n'
+              elif inside_subsection:
+                  break
+          with open('./release-notes.md', 'w') as file:
+              file.write(output)
+        shell: python
+
+      - name: Upload the release notes
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-20.04
+    needs: [rustfmt, build, upload-archives, upload-release-notes]
+
+    steps:
+      - name: Download the assets
+        uses: actions/download-artifact@v2
+        with:
+          name: assets
+          path: ./assets
+
+      - name: Download the release notes
+        uses: actions/download-artifact@v2
+        with:
+          name: release-notes
+          path: .
+
+      - name: GH Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GH Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: ./release-notes.md
+          files: ./assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
