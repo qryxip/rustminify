@@ -4,11 +4,19 @@ use anyhow::{anyhow, Context as _};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
-struct Opt {}
+struct Opt {
+    /// Removes documentation
+    #[structopt(long)]
+    remove_docs: bool,
+}
 
 fn main() -> anyhow::Result<()> {
-    Opt::from_args();
-    print(&rustminify::minify_file(&parse(&read_from_stdin()?)?))?;
+    let Opt { remove_docs } = Opt::from_args();
+    let mut code = parse(&read_from_stdin()?)?;
+    if remove_docs {
+        code = rustminify::remove_docs(code);
+    }
+    print(&rustminify::minify_file(&code))?;
     Ok(())
 }
 
