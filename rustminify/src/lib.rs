@@ -5,8 +5,17 @@
 use std::mem;
 
 use proc_macro2::{Delimiter, LineColumn, Spacing, TokenStream, TokenTree};
-use quote::ToTokens as _;
-use syn::File;
+use quote::{quote, ToTokens as _};
+use syn::{
+    parse_quote,
+    visit_mut::{self, VisitMut},
+    AttrStyle, Attribute, Field, FieldValue, File, ForeignItemFn, ForeignItemMacro,
+    ForeignItemStatic, ForeignItemType, ImplItemConst, ImplItemMacro, ImplItemMethod, ImplItemType,
+    ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl, ItemMacro, ItemMacro2,
+    ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse, Meta,
+    MetaList, NestedMeta, Path, TraitItemConst, TraitItemMacro, TraitItemMethod, TraitItemType,
+    Variant,
+};
 
 /// Minifies a [`File`].
 ///
@@ -207,10 +216,106 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
     }
 }
 
+/// Removes doc comments and doc attributes.
+///
+/// Also removes `#[{warn, deny, forbid}(missing_docs, missing_crate_level_docs)]`.
+///
+/// ```
+/// use syn::parse_quote;
+///
+/// assert_eq!(
+///     "#![deny()]pub mod module{pub struct Item;}",
+///     rustminify::minify_file(&rustminify::remove_docs(parse_quote! {
+///         #![deny(missing_docs)]
+///         pub mod module {
+///             //! module
+///
+///             /// Item
+///             pub struct Item;
+///         }
+///     }))
+/// );
+/// ```
+pub fn remove_docs(mut file: File) -> File {
+    Visitor.visit_file_mut(&mut file);
+    return file;
+
+    struct Visitor;
+
+    macro_rules! visit(($($f:ident(_, &mut $ty:ty);)*) => {
+        $(
+            fn $f(&mut self, node: &mut $ty) {
+                remove_docs(&mut node.attrs);
+                visit_mut::$f(self, node);
+            }
+        )*
+    });
+
+    impl VisitMut for Visitor {
+        visit! {
+            visit_field_mut(_, &mut Field);
+            visit_field_value_mut(_, &mut FieldValue);
+            visit_file_mut(_, &mut File);
+            visit_foreign_item_fn_mut(_, &mut ForeignItemFn);
+            visit_foreign_item_macro_mut(_, &mut ForeignItemMacro);
+            visit_foreign_item_static_mut(_, &mut ForeignItemStatic);
+            visit_foreign_item_type_mut(_, &mut ForeignItemType);
+            visit_impl_item_const_mut(_, &mut ImplItemConst);
+            visit_impl_item_macro_mut(_, &mut ImplItemMacro);
+            visit_impl_item_method_mut(_, &mut ImplItemMethod);
+            visit_impl_item_type_mut(_, &mut ImplItemType);
+            visit_item_const_mut(_, &mut ItemConst);
+            visit_item_enum_mut(_, &mut ItemEnum);
+            visit_item_extern_crate_mut(_, &mut ItemExternCrate);
+            visit_item_fn_mut(_, &mut ItemFn);
+            visit_item_foreign_mod_mut(_, &mut ItemForeignMod);
+            visit_item_impl_mut(_, &mut ItemImpl);
+            visit_item_macro2_mut(_, &mut ItemMacro2);
+            visit_item_macro_mut(_, &mut ItemMacro);
+            visit_item_mod_mut(_, &mut ItemMod);
+            visit_item_static_mut(_, &mut ItemStatic);
+            visit_item_struct_mut(_, &mut ItemStruct);
+            visit_item_trait_alias_mut(_, &mut ItemTraitAlias);
+            visit_item_trait_mut(_, &mut ItemTrait);
+            visit_item_type_mut(_, &mut ItemType);
+            visit_item_union_mut(_, &mut ItemUnion);
+            visit_item_use_mut(_, &mut ItemUse);
+            visit_trait_item_const_mut(_, &mut TraitItemConst);
+            visit_trait_item_macro_mut(_, &mut TraitItemMacro);
+            visit_trait_item_method_mut(_, &mut TraitItemMethod);
+            visit_trait_item_type_mut(_, &mut TraitItemType);
+            visit_variant_mut(_, &mut Variant);
+        }
+    }
+
+    fn remove_docs(attrs: &mut Vec<Attribute>) {
+        attrs.retain(|a| !matches!(a.parse_meta(), Ok(m) if m.path().is_ident("doc")));
+        for attr in attrs {
+            if let Ok(Meta::List(MetaList { path, nested, .. })) = attr.parse_meta() {
+                if any(&path, &["warn", "deny", "forbid"]) {
+                    let bang = matches!(attr.style, AttrStyle::Inner(_)).then(|| quote!(!));
+                    let nested = nested.into_iter().filter(|nested| {
+                        !matches!(
+                            nested, NestedMeta::Meta(Meta::Path(path))
+                            if any(path, &["missing_docs", "missing_crate_level_docs"])
+                        )
+                    });
+                    *attr = parse_quote!(##bang[#path(#(#nested),*)]);
+                }
+            }
+        }
+
+        fn any(path: &Path, idents: &[&str]) -> bool {
+            idents.iter().any(|s| path.is_ident(s))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proc_macro2::TokenStream;
-    use quote::quote;
+    use quote::{quote, ToTokens as _};
+    use syn::{parse_quote, File};
     use test_case::test_case;
 
     #[test_case(quote!(a + *b)                                => "a+*b"                           ; "joint_add_deref"       )]
@@ -226,5 +331,11 @@ mod tests {
     #[test_case(quote!(macro_rules! m { ($($_:tt)*) => {}; }) => "macro_rules!m{($($_:tt)*)=>{};}"; "macro_rules"           )]
     fn minify_tokens(tokens: TokenStream) -> String {
         crate::minify_tokens(tokens)
+    }
+
+    #[test_case(parse_quote!(#[doc = ""] pub struct Item;) => "pub struct Item;"; "item_struct"      )]
+    #[test_case(parse_quote!(#![deny(missing_docs)])       => "#![deny()]"      ; "deny_missing_docs")]
+    fn minify_tokens_with_remove_docs(file: File) -> String {
+        crate::minify_tokens(crate::remove_docs(file).into_token_stream())
     }
 }

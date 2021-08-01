@@ -11,7 +11,7 @@ categories = ["compression"]
 [dependencies]
 proc-macro2 = { version = "1.0.28", features = ["span-locations"] }
 quote = "1.0.9"
-syn = { version = "1.0.74", features = ["full"] }
+syn = { version = "1.0.74", features = ["full", "visit-mut"] }
 
 [dev-dependencies]
 test-case = "1.2.0"
