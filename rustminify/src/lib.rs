@@ -1,6 +1,6 @@
 //! Minifies Rust code.
 #![forbid(unsafe_code)]
-#![warn(rust_2018_idioms)]
+#![warn(missing_docs, rust_2018_idioms)]
 
 use std::mem;
 
