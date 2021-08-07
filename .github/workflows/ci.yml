@@ -7,7 +7,7 @@ on:
     branches:
       - master
     tags:
-      - 'rustminify-cli-v[0-9]+.[0-9]+.[0-9]+**'
+      - 'rustminify-**'
   pull_request:
 
 env:
@@ -282,7 +282,7 @@ jobs:
 
     name: Upload (${{ matrix.target-triple }})
     runs-on: ${{ matrix.os }}
-    if: ${{ startsWith(github.ref, 'refs/tags/rustminify') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/rustminify-') }}
 
     steps:
       - name: Checkout
@@ -338,7 +338,7 @@ jobs:
   upload-release-notes:
     name: Upload the release notes
     runs-on: ubuntu-20.04
-    if: ${{ startsWith(github.ref, 'refs/tags/rustminify') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/rustminify-') }}
 
     steps:
       - name: Checkout
@@ -387,6 +387,7 @@ jobs:
         with:
           name: assets
           path: ./assets
+        if: ${{ startsWith(github.ref, 'refs/tags/rustminify-cli-') }}
 
       - name: Download the release notes
         uses: actions/download-artifact@v2
