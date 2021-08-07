@@ -14,6 +14,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.42"
-rustminify = { version = "0.0.0", path = "../rustminify" }
+rustminify = { version = "0.1.0", path = "../rustminify" }
 structopt = "0.3.22"
 syn = { version = "1.0.74", features = ["full"] }
