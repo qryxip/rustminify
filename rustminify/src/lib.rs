@@ -1,4 +1,29 @@
 //! Minifies Rust code.
+//!
+//! ```
+//! # ();
+//! use syn::parse_quote;
+//!
+//! assert_eq!(
+//!     r#"fn main(){println!("{}",module::f());}mod module{pub(crate)fn f()->i32{1+1}}"#,
+//!     rustminify::minify_file(&rustminify::remove_docs(parse_quote! {
+//!         //! crate-level doc
+//!
+//!         fn main() {
+//!             println!("{}", module::f());
+//!         }
+//!
+//!         mod module {
+//!             //! module-level doc
+//!
+//!             /// doc for an item
+//!             pub(crate) fn f() -> i32 {
+//!                 1 + 1
+//!             }
+//!         }
+//!     })),
+//! );
+//! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs, rust_2018_idioms)]
 
