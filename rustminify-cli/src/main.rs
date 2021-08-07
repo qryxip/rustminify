@@ -5,7 +5,7 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 struct Opt {
-    /// Removes documentation
+    /// Removes documentation and `#[{warn, deny, forbid}(missing_docs)]`
     #[structopt(long)]
     remove_docs: bool,
 }

@@ -216,9 +216,9 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
     }
 }
 
-/// Removes doc comments and doc attributes.
+/// Removes documentation and <code>#[{warn, deny, forbid}([missing_docs])]</code>.
 ///
-/// Also removes `#[{warn, deny, forbid}(missing_docs, missing_crate_level_docs)]`.
+/// [missing_docs]: https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html#missing-docs
 ///
 /// ```
 /// use syn::parse_quote;
