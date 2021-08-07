@@ -1,6 +1,31 @@
 //! Minifies Rust code.
+//!
+//! ```
+//! # ();
+//! use syn::parse_quote;
+//!
+//! assert_eq!(
+//!     r#"fn main(){println!("{}",module::f());}mod module{pub(crate)fn f()->i32{1+1}}"#,
+//!     rustminify::minify_file(&rustminify::remove_docs(parse_quote! {
+//!         //! crate-level doc
+//!
+//!         fn main() {
+//!             println!("{}", module::f());
+//!         }
+//!
+//!         mod module {
+//!             //! module-level doc
+//!
+//!             /// doc for an item
+//!             pub(crate) fn f() -> i32 {
+//!                 1 + 1
+//!             }
+//!         }
+//!     })),
+//! );
+//! ```
 #![forbid(unsafe_code)]
-#![warn(rust_2018_idioms)]
+#![warn(missing_docs, rust_2018_idioms)]
 
 use std::mem;
 
@@ -216,9 +241,9 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
     }
 }
 
-/// Removes doc comments and doc attributes.
+/// Removes documentation and <code>#[{warn, deny, forbid}([missing_docs])]</code>.
 ///
-/// Also removes `#[{warn, deny, forbid}(missing_docs, missing_crate_level_docs)]`.
+/// [missing_docs]: https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html#missing-docs
 ///
 /// ```
 /// use syn::parse_quote;
