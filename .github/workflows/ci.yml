@@ -313,7 +313,7 @@ jobs:
             DOT_EXE=.exe
           fi
           ASSET_STEM="$BIN_TARGET-${GITHUB_REF#refs/tags/rustminify-cli-}-${{ matrix.target-triple }}"
-          git archive -o "./$ASSET_STEM.tar" --prefix "$ASSET_STEM/" HEAD
+          git archive -o "./$ASSET_STEM.tar" --prefix "$ASSET_STEM/src/" HEAD
           tar -xf "./$ASSET_STEM.tar"
           mv "$HOME/.cargo/bin/$BIN_TARGET$DOT_EXE" "./$ASSET_STEM/"
           if ${{ contains(matrix.target-triple, 'pc-windows') }}; then
@@ -396,14 +396,7 @@ jobs:
           path: .
 
       - name: GH Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ./assets/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: GH Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v0.1.7 # https://github.com/softprops/action-gh-release/issues/142
         with:
           body_path: ./release-notes.md
           files: ./assets/*
