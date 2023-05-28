@@ -185,6 +185,14 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
                             *spacing = punct.spacing();
                         }
                     } else {
+                        match &st {
+                            State::AlnumUnderscoreQuote => {
+                                if "#\"'".contains(punct.as_char()) {
+                                    *acc += " ";
+                                }
+                            }
+                            _ => {}
+                        }
                         st = State::PunctChars(
                             punct.as_char().to_string(),
                             cur_pos,
