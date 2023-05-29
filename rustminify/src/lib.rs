@@ -112,8 +112,15 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
                     st = State::None;
                 }
                 TokenTree::Ident(ident) => {
-                    match mem::replace(&mut st, State::AlnumUnderscoreQuote) {
-                        State::AlnumUnderscoreQuote => *acc += " ",
+                    match mem::replace(
+                        &mut st,
+                        if ident.to_string().contains('#') {
+                            State::PoundIdent
+                        } else {
+                            State::AlnumUnderscoreQuote
+                        },
+                    ) {
+                        State::AlnumUnderscoreQuote | State::PoundIdent => *acc += " ",
                         State::PunctChars(puncts, _, _) => *acc += &puncts,
                         _ => {}
                     }
@@ -131,7 +138,7 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
                         (&*literal, State::AlnumUnderscoreQuote)
                     };
                     match mem::replace(&mut st, next) {
-                        State::AlnumUnderscoreQuote => *acc += " ",
+                        State::AlnumUnderscoreQuote | State::PoundIdent => *acc += " ",
                         State::PunctChars(puncts, _, _) => *acc += &puncts,
                         _ => {}
                     }
@@ -214,6 +221,7 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
         enum State {
             None,
             AlnumUnderscoreQuote,
+            PoundIdent,
             PunctChars(String, LineColumn, Spacing),
         }
     }
