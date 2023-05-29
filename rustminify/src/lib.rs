@@ -354,6 +354,7 @@ pub fn remove_docs(mut file: File) -> File {
 
 #[cfg(test)]
 mod tests {
+    use core::str::FromStr;
     use proc_macro2::TokenStream;
     use quote::{quote, ToTokens as _};
     use syn::{parse_quote, File};
@@ -370,6 +371,32 @@ mod tests {
     #[test_case(quote!(x | || ())                             => "x| ||()"                        ; "zero_arg_closure"      )]
     #[test_case(quote!(println!("{}", 2 * 2 + 1))             => r#"println!("{}",2*2+1)"#        ; "println"               )]
     #[test_case(quote!(macro_rules! m { ($($_:tt)*) => {}; }) => "macro_rules!m{($($_:tt)*)=>{};}"; "macro_rules"           )]
+    // https://doc.rust-lang.org/reference/tokens.html#reserved-prefixes
+    #[test_case(
+        quote!(fn x(a: &'a u8[]) -> impl 'a + Clone {}) =>
+        "fn x(a:&'a u8[])->impl 'a+Clone{}";
+        "impl_lifetime"
+    )]
+    #[test_case(
+        quote!(match "a" { _ => false}) =>
+        r#"match "a"{_=>false}"#;
+        "match_str_literal"
+    )]
+    #[test_case(
+        quote!('s: loop { loop { break 's; }}) =>
+        "'s:loop{loop{break 's;}}";
+        "break_label"
+    )]
+    #[test_case(
+        TokenStream::from_str("macro_rules! m { ($($_:tt)*) => {} } m!{ a # foo }").unwrap() =>
+        "macro_rules!m{($($_:tt)*)=>{}}m!{a #foo}";
+        "macro_punct_pound"
+    )]
+    #[test_case(
+        TokenStream::from_str("macro_rules! m { ($($_:tt)*) => {} } m!{ r#let # foo }").unwrap() =>
+        "macro_rules!m{($($_:tt)*)=>{}}m!{r#let#foo}";
+        "macro_rawident_punct_pound"
+    )]
     fn minify_tokens(tokens: TokenStream) -> String {
         crate::minify_tokens(tokens)
     }
