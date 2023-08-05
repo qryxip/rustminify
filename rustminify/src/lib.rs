@@ -142,7 +142,7 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
                         State::PunctChars(puncts, _, _) => *acc += &puncts,
                         _ => {}
                     }
-                    *acc += &literal.to_string();
+                    *acc += literal;
                 }
                 TokenTree::Punct(punct) => {
                     let cur_pos = punct.span().start();
@@ -192,13 +192,8 @@ pub fn minify_tokens(tokens: TokenStream) -> String {
                             *spacing = punct.spacing();
                         }
                     } else {
-                        match &st {
-                            State::AlnumUnderscoreQuote => {
-                                if "#\"'".contains(punct.as_char()) {
-                                    *acc += " ";
-                                }
-                            }
-                            _ => {}
+                        if st == State::AlnumUnderscoreQuote && "#\"'".contains(punct.as_char()) {
+                            *acc += " ";
                         }
                         st = State::PunctChars(
                             punct.as_char().to_string(),
