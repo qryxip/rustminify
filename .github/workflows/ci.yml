@@ -92,12 +92,6 @@ jobs:
           toolchain: stable
           profile: minimal
 
-      - name: Set up `${{ env.NIGHTLY_TOOLCHAIN }}`
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
-          profile: minimal
-          components: llvm-tools-preview
 
       - name: Set up Python 3.9
         uses: actions/setup-python@v2
@@ -190,25 +184,6 @@ jobs:
           target: ${{ matrix.target-triple }}
           profile: minimal
 
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
-
-      - name: Resolve `cargo-udeps ^0.1`
-        id: resolve-versions
-        run: python -c "$RESOLVE_VERSIONS_PY" cargo-udeps@^0.1
-        shell: bash
-
-      - name: Cache for cargo-udeps
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/cargo-udeps${{ matrix.exe-suffix }}
-          key: build-crates-${{ matrix.os }}-${{ steps.resolve-versions.outputs.cargo-udeps }}
-
       - name: Cache for build cache
         uses: actions/cache@v2
         with:
@@ -217,13 +192,6 @@ jobs:
             ~/.cargo/registry
             ./target
           key: build-build-${{ matrix.channel }}-${{ matrix.target-triple }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ hashFiles('./Cargo.*') }}
-
-      - name: Install cargo-udeps v${{ steps.resolve-versions.outputs.cargo-udeps }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-udeps --version '=${{ steps.resolve-versions.outputs.cargo-udeps }}'
-          toolchain: stable
 
       - name: cargo-clippy
         uses: actions-rs/cargo@v1
@@ -250,13 +218,6 @@ jobs:
         with:
           command: install
           args: --path ./rustminify-cli --debug --target ${{ matrix.target-triple }}
-
-      - name: cargo-udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: udeps
-          args: --all-targets
-          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
 
   upload-archives:
     strategy:
