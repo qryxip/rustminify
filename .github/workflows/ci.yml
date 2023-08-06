@@ -303,11 +303,13 @@ jobs:
 
       - name: Prepare release notes
         run: |
+          import os
           from pathlib import Path
-          PATH = Path('./CHANGELOG.md')
+          name = os.environ["GITHUB_REF_NAME"].split("-v")[0]
+          path = Path(f"./{name}/CHANGELOG.md")
           output = ''
-          if PATH.exists():
-              with open(PATH) as file:
+          if path.exists():
+              with open(path) as file:
                   changelog = file.read()
               inside_subsection = False
               for line in changelog.splitlines():
