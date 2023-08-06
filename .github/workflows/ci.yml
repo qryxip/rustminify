@@ -163,7 +163,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { channel: stable, target-triple: x86_64-pc-windows-msvc  , exe-suffix: .exe, os: windows-2019 }
-          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-12     }
           - { channel: stable, target-triple: x86_64-unknown-linux-gnu, exe-suffix: ''  , os: ubuntu-20.04 }
 
     name: ${{ matrix.channel }}-${{ matrix.target-triple }}
@@ -172,11 +172,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-
-      # Workaround for https://github.com/actions/cache/issues/403
-      - name: Use GNU tar
-        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >>"$GITHUB_ENV"
-        if: ${{ matrix.os == 'macos-10.15' }}
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
         id: install-toolchain
@@ -273,7 +268,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { target-triple: x86_64-apple-darwin     , os: macos-12     }
           - { target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
 
     name: Upload (${{ matrix.target-triple }})
